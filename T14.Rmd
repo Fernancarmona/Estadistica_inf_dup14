@@ -1,0 +1,136 @@
+---
+title: "T14"
+author: "_"
+date: "2025-06-29"
+output: html_document
+---
+
+```{r}
+library(ggeffects)
+library(ggpubr)
+```
+
+
+```{r}
+# Inventamos datos de la aprobación de un examen
+set.seed(13)
+horas <- rnorm(150, 10, 2)
+horas <- ifelse(horas < 0, 0, horas)
+error <- rnorm(150, 2, 1)
+resultado <- ifelse(horas + error > 12, 0, 1)
+examen <- factor(resultado, labels = c("aprueba", "reprueba"))
+examen <- factor(examen, levels = c("reprueba", "aprueba")) # 'aprueba' es '+'
+
+# Separamos en datos de entrenamiento y prueba                                     
+datos_ent <- data.frame(horas = round(horas[1:100], 1), examen = examen[1:100])
+datos_pru <- data.frame(horas = round(horas[101:150], 1), examen = examen[101:150])
+
+# Veamos si los datos parecen bien (no hay mucho desbalance de clases)
+print(summary(datos_ent))
+print(summary(datos_pru))
+```
+
+
+```{r}
+# Construimos y comparamos modelos
+nulo <- glm(examen ~ 1, family = "binomial", data = datos_ent)
+rlog <- glm(examen ~ horas, family = "binomial", data = datos_ent)
+print(anova(nulo, rlog, test = "LRT"))
+
+# Grafiquemos el modelo
+g <-ggpredict(rlog, terms="horas [all]") |> plot(colors = "steelblue")
+g <- g + theme_pubr()
+g <- g + labs(title = "Modelo RLog", subtitle = "Aprueba examen ~ horas de estudio",
+              x = "Horas de estudio", y = "P(aprueba | horas de estudio)")
+print(g)
+```
+
+
+```{r}
+# Obtenemos poder predictivo en los datos de entrenamiento usando 0,5 como umbral
+probs_ent <- predict(rlog, datos_ent, "response")
+preds_ent <- ifelse(probs_ent >= 0.5, "aprueba", "reprueba")
+preds_ent <- factor(preds_ent, levels = levels(datos_ent[["examen"]]))
+
+# Usamos el paquete caret para obtener la matriz de confusión
+library(caret)
+mat_conf_ent <- confusionMatrix(datos_ent[["examen"]], preds_ent)
+
+# Mostramos los resultados
+cat("\n")
+cat("Predicciones en el conjunto de entrenamiento:\n")
+cat("--------------------------------------------\n")
+print(mat_conf_ent[["table"]])
+cat("\n")
+cat(sprintf("    Exactitud: %.3f\n", mat_conf_ent[["overall"]]["Accuracy"]))
+cat(sprintf(" Sensibilidad: %.3f\n", mat_conf_ent[["byClass"]]["Sensitivity"]))
+cat(sprintf("Especificidad: %.3f\n", mat_conf_ent[["byClass"]]["Specificity"]))
+```
+
+```{r}
+
+# Vemos poder predictivo en los datos de prueba con el mismo umbral
+probs_pru <- predict(rlog, datos_pru, "response")
+preds_pru <- ifelse(probs_pru >= 0.5, "aprueba", "reprueba")
+preds_pru <- factor(preds_pru, levels = levels(datos_ent[["examen"]]))
+mat_conf_pru <- confusionMatrix(datos_pru[["examen"]], preds_pru)
+
+# Mostramos los resultados
+cat("\n")
+cat("Predicciones en el conjunto de prueba:\n")
+cat("-------------------------------------\n")
+print(mat_conf_pru[["table"]])
+cat("\n")
+cat(sprintf("    Exactitud: %.3f\n", mat_conf_pru[["overall"]]["Accuracy"]))
+cat(sprintf(" Sensibilidad: %.3f\n", mat_conf_pru[["byClass"]]["Sensitivity"]))
+cat(sprintf("Especificidad: %.3f\n", mat_conf_pru[["byClass"]]["Specificity"]))
+```
+
+
+```{r}
+
+
+# Pero a veces 0,5 no es el mejor umbral 
+# Obtenemos las curva ROC con las predicciones de ambos modelos
+library(pROC)
+roc_ent <- roc(datos_ent[["examen"]], probs_ent, direction = "<")
+roc_pru <- roc(datos_pru[["examen"]], probs_pru, direction = "<")
+
+# Graficamos las curvas ROC obtenidas
+g_rocs <- ggroc(list(roc_ent, roc_pru))
+g_rocs <- g_rocs + scale_colour_manual(name = "Conjunto",
+                                       labels = c("Entrenamiento", "Prueba"),
+                                       values = c("steelblue", "red"))
+g_rocs <- g_rocs + theme_pubr()
+print(g_rocs)
+```
+
+
+```{r}
+# Obtenemos el mejor umbral según esta curva ROC del entrenamiento
+coord_ent <- coords(roc_ent, x = "all", transpose = FALSE)
+coord_ent[["dist_euc"]] <- sqrt((1 - coord_ent[["sensitivity"]])^2 +
+                                  (1 - coord_ent[["specificity"]])^2)
+i_min <- which.min(coord_ent[["dist_euc"]])[1]
+mejor_umbral <- coord_ent[["threshold"]][i_min]
+cat("\n")
+cat(sprintf("Mejor umbral: %.3f\n", mejor_umbral))
+```
+
+
+```{r}
+# Vemos poder predictivo en los datos de prueba usando este mejornuevoumbral
+preds_pru2 <- ifelse(probs_pru >= mejor_umbral, "aprueba", "reprueba")
+preds_pru2 <- factor(preds_pru2, levels = levels(datos_ent[["examen"]]))
+mat_conf_pru2 <- confusionMatrix(datos_pru[["examen"]], preds_pru2)
+
+# Mostramos los resultados
+cat("\n")
+cat("Predicciones en el conjunto de prueba:\n")
+cat("-------------------------------------\n")
+print(mat_conf_pru2[["table"]])
+cat("\n")
+cat(sprintf("    Exactitud: %.3f\n", mat_conf_pru2[["overall"]]["Accuracy"]))
+cat(sprintf(" Sensibilidad: %.3f\n", mat_conf_pru2[["byClass"]]["Sensitivity"]))
+cat(sprintf("Especificidad: %.3f\n", mat_conf_pru2[["byClass"]]["Specificity"]))
+```

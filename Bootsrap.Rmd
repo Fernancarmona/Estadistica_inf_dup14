@@ -1,0 +1,140 @@
+---
+title: "Bootstrap modelos"
+author: "_"
+date: "2025-06-30"
+output: html_document
+---
+
+Los métodos de validación, también conocidos como resampling, son estrategias que permiten estimar la capacidad predictiva de los modelos cuando se aplican a nuevas observaciones, haciendo uso únicamente de los datos de entrenamiento. La idea en la que se basan todos ellos es la siguiente: el modelo se ajusta empleando un subconjunto de observaciones del conjunto de entrenamiento y se evalúa (calcular una métrica que mida como de bueno es el modelo, por ejemplo, accuracy) con las observaciones restantes. Este proceso se repite múltiples veces y los resultados se agregan y promedian. Gracias a las repeticiones, se compensan las posibles desviaciones que puedan surgir por el reparto aleatorio de las observaciones. La diferencia entre métodos suele ser la forma en la que se generan los subconjuntos de entrenamiento/validación.
+
+
+Conjunto de entrenamiento (training set): datos/observaciones con las que se entrena el modelo.
+
+Conjunto de validación y conjunto de test (validation set y test set): datos/observaciones del mismo tipo que las que forman el conjunto de entrenamiento pero que no se han empleado en la creación del modelo. Son datos que el modelo no ha “visto”.
+
+Error de entrenamiento (training error): error que comete el modelo al predecir observaciones que pertenecen al conjunto de entrenamiento.
+
+Error de validación y error de test (evaluation error y test error): error que comete el modelo al predecir observaciones del conjunto de validación y del conjunto de test. En ambos casos son observaciones que el modelo no ha “visto”.
+
+### Leave One Out Cross-Validation (LooCV)
+
+LOOCV es una técnica de validación que consiste en entrenar el modelo con todos los datos menos una observación, que se usa como prueba. Este proceso se repite tantas veces como observaciones haya, usando cada una como validación una sola vez. El error final es el promedio de todos los errores obtenidos.
+
+Ventajas:
+
+- Usa todos los datos para entrenamiento y validación, reduciendo la variabilidad.
+
+- Resultados reproducibles, ya que no hay partición aleatoria.
+
+Desventaja principal:
+
+- Muy costoso computacionalmente, ya que requiere ajustar el modelo n veces.
+
+- Excepción: en regresión lineal y polinomial, solo se necesita un ajuste.
+
+Puede causar overfitting al usar todos los datos para entrenar, para eso se recomienda K-Fold Cross-Validation
+
+```{r}
+library(caret)
+
+# Datos
+data(mtcars)
+
+# Configurar control para LOOCV
+control_loocv <- trainControl(method = "LOOCV")
+
+# Entrenar modelo con LOOCV
+modelo_loocv <- train(mpg ~ wt + hp, data = mtcars, method = "lm",
+                      trControl = control_loocv)
+
+# Resultados
+print(modelo_loocv)
+
+
+```
+
+
+
+### K-Fold Cross-Validation 
+
+K-Fold CV es un método iterativo que divide aleatoriamente los datos en k grupos (o "folds") de tamaño similar. En cada iteración, se usa k–1 grupos para entrenar el modelo y el grupo restante para validarlo. Este proceso se repite k veces, cambiando el grupo de validación en cada vuelta. El error final es el promedio de los k errores obtenidos.
+
+Ventajas frente a LOOCV:
+
+- Menor coste computacional:
+Requiere solo k iteraciones (normalmente k entre 5 y 10), mientras que LOOCV necesita una por cada observación.
+
+- Mejor balance bias-varianza:
+LOOCV tiene bajo bias porque usa casi todos los datos para entrenar, pero genera modelos muy similares entre sí, lo que incrementa la varianza.
+
+K-Fold CV reduce este solapamiento entre conjuntos de entrenamiento, disminuyendo la varianza sin aumentar demasiado el bias.
+
+```{r}
+library(caret)
+
+# Configurar control para 5-Fold CV
+control_kfold <- trainControl(method = "cv", number = 5)
+
+# Entrenar modelo con K-Fold
+modelo_kfold <- train(mpg ~ wt + hp, data = mtcars, method = "lm",
+                      trControl = control_kfold)
+
+# Resultados
+print(modelo_kfold)
+```
+
+
+### Repeated k-Fold-Cross-Validation
+Repetir lo anterior n veces.
+
+### Bootstraping
+
+Bootstrap es una técnica de validación que consiste en generar múltiples muestras aleatorias con reposición a partir de la muestra original, manteniendo el mismo tamaño. Esto implica que algunas observaciones pueden repetirse y otras quedar fuera (out-of-bag u OOB).
+
+Proceso:
+
+1. Generar una muestra bootstrap (aleatoria con reposición).
+
+2. Ajustar el modelo con esta muestra.
+
+3. Evaluar el modelo usando los datos OOB (no seleccionados).
+
+4. Repetir los pasos anteriores n veces.
+
+5. Promediar los n errores de validación obtenidos.
+
+6. Finalmente, ajustar el modelo definitivo con todos los datos originales.
+
+Observación:
+
+- Bootstrap puede introducir cierto bias cuando el conjunto de datos es pequeño.
+
+- Para corregirlo, existen variantes como el método 0.632 y 0.632+.
+
+```{r}
+library(caret)
+
+# Control para Bootstrap con 100 repeticiones
+control_boot <- trainControl(method = "boot", number = 100)
+
+# Entrenar modelo con bootstrap
+modelo_boot <- train(mpg ~ wt + hp, data = mtcars, method = "lm",
+                     trControl = control_boot)
+
+# Resultados
+print(modelo_boot)
+```
+
+### Comparación
+
+Si el tamaño de la muestra es pequeño, se recomienda emplear repeated k-Fold-Cross-Validation, ya que consigue un buen equilibrio bias-varianza y, dado que no son muchas observaciones, el coste computacional no es excesivo.
+
+Si el objetivo principal es comparar modelos mas que obtener una estimación precisa de las métricas, se recomienda bootstrapping ya que tiene menos varianza.
+
+Si el tamaño muestral es muy grande, la diferencia entre métodos se reduce y toma más importancia la eficiencia computacional. En estos casos, 10-Fold-Cross-Validation simple es suficiente
+
+### Bibliografía 
+
+https://cienciadedatos.net/documentos/30_cross-validation_oneleaveout_bootstrap#KFold_Cross-Validation 
+
+
